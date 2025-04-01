@@ -33,26 +33,28 @@ resource "aws_iam_role" "eks_cluster_role" {
     })
 }
 
-# VPC and subnet for EKS cluster
-
-resource "aws_subnet" "eks_subnet" {
-    vpc_id            = aws_vpc.eks_vpc.id
-    cidr_block        = "10.0.1.0/24"
-    availability_zone = var.availability_zone
-}
-
+# VPC
 resource "aws_vpc" "eks_vpc" {
-    cidr_block = "10.0.0.0/16"
+  cidr_block = "10.0.0.0/16"
 }
 
-# EKS cluster
-resource "aws_eks_cluster" "new_cluster" {
-    name     = "${var.name}-cluster"
-    role_arn = aws_iam_role.eks_cluster_role.arn
+# Subnets
+resource "aws_subnet" "eks_subnets" {
+  for_each = toset(var.availability_zone)
 
-    vpc_config {
-        subnet_ids = [aws_subnet.eks_subnet.id] 
-    }
+  vpc_id            = aws_vpc.eks_vpc.id
+  cidr_block        = cidrsubnet(aws_vpc.eks_vpc.cidr_block, 8, index(var.availability_zone, each.key))
+  availability_zone = each.key
+}
+
+# EKS Cluster
+resource "aws_eks_cluster" "new_cluster" {
+  name     = "${var.name}-cluster"
+  role_arn = aws_iam_role.eks_cluster_role.arn
+
+  vpc_config {
+    subnet_ids = [for subnet in aws_subnet.eks_subnets : subnet.id]
+  }
 }
 
 ### Worker nodes ###
@@ -91,12 +93,12 @@ resource "aws_iam_role" "eks_node_role" {
   })
 }
 
-# Node group for EKS cluster
+# Node group
 resource "aws_eks_node_group" "eks_nodes" {
   cluster_name    = aws_eks_cluster.new_cluster.name
   node_group_name = "eks-dev-node-group"
   node_role_arn   = aws_iam_role.eks_node_role.arn
-  subnet_ids      = [aws_subnet.eks_subnet.id]
+  subnet_ids      = [for subnet in aws_subnet.eks_subnets : subnet.id]
 
   scaling_config { 
     desired_size = 1
@@ -107,5 +109,6 @@ resource "aws_eks_node_group" "eks_nodes" {
   instance_types = ["t2.micro"] 
   disk_size      = 10           # Size in GB
 
-  ami_type = "AL2_x86_64" # Amazon Linux 2 AMI
+  ami_type      = "AL2_x86_64" # Amazon Linux 2 AMI
+  capacity_type = "SPOT"
 }

@@ -4,8 +4,9 @@ variable "region" {
 }
 
 variable "availability_zone" {
-    description = "AZ for EKS cluster"
-    type        = string
+  description = "List of availability zones"
+  type        = list(string)
+  default     = ["us-east-1a", "us-east-1b"]
 }
 
 variable "name" {
